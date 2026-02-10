@@ -23,19 +23,21 @@ from functions.degradation import get_degradation, wrap_operator_video
 
 parser = argparse.ArgumentParser()
 # problem params
-parser.add_argument('--task', type=str, default='sr_avgpool',
+parser.add_argument('--task', type=str, default='deblur_gauss',
     choices=[
         'deblur_gauss',
         'deblur_motion',
-        'sr_avgpool',
-        'inpainting',
+        'super_resolution',
+        'box_inpainting',
+        'random_inpainting',
+        'temporal_avg'
     ],
     help='Degradation task type')
-parser.add_argument('--deg_scale', type=float, default=8)
+parser.add_argument('--deg_scale', type=float, default=61)
 parser.add_argument('--H', type=int, default=480)
 parser.add_argument('--W', type=int, default=832)
-parser.add_argument('--num_refine', type=int, default=5, help='Number of refinement steps')
-parser.add_argument('--ths_uncertainty', type=float, default=0.25, help='Threshold for uncertainty masking')
+parser.add_argument('--num_refine', type=int, default=3, help='Number of refinement steps')
+parser.add_argument('--ths_uncertainty', type=float, default=0.5, help='Threshold for uncertainty masking')
 parser.add_argument("--config_path", type=str, help="Path to the config file")
 parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint folder")
 parser.add_argument("--data_path", type=str, help="Path to the dataset")
@@ -63,7 +65,7 @@ args = parser.parse_args()
 device = torch.device("cuda")
 local_rank = 0
 world_size = 1
-    # set_seed(args.seed)
+set_seed(args.seed)
 
 print(f'Free VRAM {get_cuda_free_memory_gb(gpu)} GB')
 low_memory = get_cuda_free_memory_gb(gpu) < 40
@@ -78,6 +80,19 @@ config = OmegaConf.merge(default_config, config)
 pipeline = CausalRestorationPipeline(config, device=device)
 
 # problem setup
+if args.task in ['deblur_gauss', 'deblur_motion']:
+    args.deg_scale = 61
+elif args.task == 'super_resolution':
+    args.deg_scale = 4
+elif args.task == 'box_inpainting':
+    args.deg_scale = 128
+elif args.task == 'random_inpainting':
+    args.deg_scale = 0.92
+elif args.task == 'temporal_avg':
+    args.deg_scale = 13
+else:
+    raise NotImplementedError(f'Task {args.task} not implemented!')
+
 deg_config = munchify({
     'channels': 3,
     'H': args.H,
@@ -85,7 +100,9 @@ deg_config = munchify({
     'deg_scale': args.deg_scale
     })
 operator = get_degradation(args.task, deg_config, device)
-operator = wrap_operator_video(operator)
+
+if not args.task == 'temporal_avg':
+    operator = wrap_operator_video(operator)
 
 if args.checkpoint_path:
     state_dict = torch.load(args.checkpoint_path, map_location="cpu")
@@ -147,7 +164,7 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
         )
     
     # Generate frames
-    video = pipeline.inference(
+    video, measurement_video = pipeline.inference(
         measurement=y,
         operator=operator,
         task=args.task,
@@ -161,8 +178,10 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
 
     current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
     gt = rearrange(gt , 'b t c h w -> b t h w c').cpu()
-    y = operator.At(y)
+    if args.task == 'super_resolution':
+        y = operator.At(y)
     y = rearrange(y , 'b t c h w -> b t h w c').cpu()
+    dds_y = rearrange(measurement_video, 'b t c h w -> b t h w c').cpu()
     all_video.append(current_video)
 
     # Final output video
@@ -175,12 +194,20 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
     if idx < num_prompts:
         for seed_idx in range(args.num_samples):
             base_name = f'{idx}-{seed_idx}'
-            param_suffix = f'{args.ths_uncertainty}_{args.num_refine}_output.mp4'
+            
+            param_folder_name = f'threshold-{args.ths_uncertainty}_refine-{args.num_refine}'
+            task_folder = os.path.join(args.output_folder, param_folder_name, args.task)
+            os.makedirs(task_folder, exist_ok=True)
 
-            output_path = os.path.join(args.output_folder, f'{base_name}_{param_suffix}')
-            gt_path = os.path.join(args.output_folder, f'{base_name}_gt.mp4')
-            meas_path = os.path.join(args.output_folder, f'{base_name}_meas.mp4')
+            output_path = os.path.join(task_folder, f'{base_name}_output.mp4')
+            gt_path     = os.path.join(task_folder, f'{base_name}_gt.mp4')
+            meas_path   = os.path.join(task_folder, f'{base_name}_meas.mp4')
+            dds_meas_path   = os.path.join(task_folder, f'{base_name}_dds_meas.mp4')
 
             write_video(output_path, video[seed_idx], fps=16)
-            write_video(gt_path, (gt[seed_idx] + 1.0) * 127.5, fps=16) if gt is not None else None
-            write_video(meas_path, (y[seed_idx] + 1.0) * 127.5, fps=16) if y is not None else None
+            if gt is not None:
+                write_video(gt_path, (gt[seed_idx] + 1.0) * 127.5, fps=16)
+            if y is not None:
+                write_video(meas_path, (y[seed_idx] + 1.0) * 127.5, fps=16)
+            if dds_y is not None:
+                write_video(dds_meas_path, (dds_y[seed_idx] + 1.0) * 127.5, fps=16)

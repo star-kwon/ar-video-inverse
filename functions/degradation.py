@@ -24,9 +24,18 @@ def get_degradation(name: str,
         raise NameError(f'DEGRADATION {name} does not exist.')
     return __DEGRADATION__[name](deg_config, device)
 
-@register_degradation(name='inpainting')
+@register_degradation(name='random_inpainting')
 def deg_inpainting(deg_config, device):
-    A_funcs = measurements.InpaintingOperator(deg_config.channels,
+    A_funcs = measurements.RandomInpaintingOperator(deg_config.channels,
+                                            deg_config.H,
+                                            deg_config.W,
+                                            ratio=deg_config.deg_scale,
+                                            device=device)
+    return A_funcs
+
+@register_degradation(name='box_inpainting')
+def deg_inpainting(deg_config, device):
+    A_funcs = measurements.BoxInpaintingOperator(deg_config.channels,
                                             deg_config.H,
                                             deg_config.W,
                                             size=deg_config.deg_scale,
@@ -43,8 +52,8 @@ def deg_deblur_motion(deg_config, device):
     return A_funcs
 
 # ======= FOR arbitraty image size =======
-@register_degradation(name='sr_avgpool')
-def deg_sr_avgpool_general(deg_config, device):
+@register_degradation(name='super_resolution')
+def deg_sr_general(deg_config, device):
     blur_by = int(deg_config.deg_scale)
     A_funcs = measurements.SuperResolutionOperator(
                                             blur_by,
@@ -61,6 +70,13 @@ def deg_deblur_guass_general(deg_config, device):
     )
     return A_funcs
 
+@register_degradation(name='temporal_avg')
+def deg_temporal_avg(deg_config, device):
+    A_funcs = measurements.TemporalAvgOperator(
+        kernel_size=deg_config.deg_scale,
+        device=device
+    )
+    return A_funcs
 
 from functions.jpeg import jpeg_encode, jpeg_decode
 

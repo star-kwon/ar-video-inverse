@@ -83,13 +83,14 @@ class DenoiseOperator(LinearOperator):
         return data
 
 
-@register_operator(name='sr_avgpool')
+@register_operator(name='super_resolution')
 class SuperResolutionOperator(LinearOperator):
     def __init__(self,
                  scale_factor,
                  device):
         self.device = device
-        self.down_sample = lambda x: F.avg_pool2d(x, kernel_size=scale_factor, stride=scale_factor)
+        self.scale_factor = scale_factor
+        self.down_sample = lambda x: F.interpolate(x, scale_factor=1/scale_factor, mode='area')
         self.up_sample = lambda x: F.interpolate(x, scale_factor=scale_factor, mode='nearest')
 
     def A(self, data, **kwargs):
@@ -180,7 +181,7 @@ class GaussialBlurOperator(LinearOperator):
         pass
 
     def transpose(self, data, **kwargs):
-        return data
+        return self.conv(data)
 
     def get_kernel(self):
         return self.kernel.view(1, 1, self.kernel_size, self.kernel_size)
@@ -195,8 +196,8 @@ class GaussialBlurOperator(LinearOperator):
     def At(self, data):
         return self.transpose(data)
 
-@register_operator(name='inpainting')
-class InpaintingOperator(LinearOperator):
+@register_operator(name='box_inpainting')
+class BoxInpaintingOperator(LinearOperator):
     def __init__(self,
                  C,
                  H,
@@ -215,18 +216,43 @@ class InpaintingOperator(LinearOperator):
         pass
 
     def transpose(self, data, **kwargs):
-        # data = data * self.mask
+        data = data * self.mask
         return data
 
-    def ortho_project(self, data, **kwargs):
-        return data - self.forward(data, **kwargs)
-    
     def A(self, data):
         return self.forward(data)
 
     def At(self, data):
         return self.transpose(data)
 
+@register_operator(name='random_inpainting')
+class RandomInpaintingOperator(LinearOperator):
+    def __init__(self,
+                 C,
+                 H,
+                 W,
+                 ratio,
+                 device):
+        self.device = device
+        # self.mask = generate_box_mask(shape=(1, C, H, W), box_size=int(size)).to(device)
+        self.mask = generate_random_mask(shape=(1, C, H, W), pixel_ratio=ratio).to(device)
+
+    def forward(self, data, **kwargs):
+        data = data * self.mask
+        return data
+
+    def noisy_forward(self, data, **kwargs):
+        pass
+
+    def transpose(self, data, **kwargs):
+        data = data * self.mask
+        return data
+
+    def A(self, data):
+        return self.forward(data)
+
+    def At(self, data):
+        return self.transpose(data)
 
 # =============
 # Noise classes
@@ -295,3 +321,62 @@ class PoissonNoise(Noise):
         data = data * 2.0 - 1.0
         data = data.clamp(-1, 1)
         return data.to(device)
+
+
+@register_operator(name="temporal_avg")
+class TemporalAvgOperator(LinearOperator):
+    def __init__(self, kernel_size: int, device):
+        self.device = device
+        self.n = int(kernel_size)
+
+    def forward(self, data, **kwargs):
+        return causal_avg_forward(data, self.n)
+
+    def transpose(self, data, **kwargs):
+        return causal_avg_transpose(data, self.n)
+
+    def noisy_forward(self, data, **kwargs):
+        raise NotImplementedError
+
+    def A(self, data):
+        return self.forward(data)
+
+    def At(self, data):
+        return self.transpose(data)
+
+def causal_avg_forward(x: torch.Tensor, n: int) -> torch.Tensor:
+    """
+    x: (B, T, C, H, W)
+    Forward causal average.
+    """
+    x_fp32 = x.float()
+    T = x.shape[1]
+
+    cs = x_fp32.cumsum(dim=1)
+    
+    cs_shifted = torch.cat([torch.zeros_like(cs[:, :n]), cs[:, :-n]], dim=1)
+    window_sum = cs - cs_shifted
+
+    denom = torch.arange(1, T + 1, device=x.device).clamp_max(n).view(1, T, 1, 1, 1)
+    
+    return (window_sum / denom).to(dtype=x.dtype)
+
+def causal_avg_transpose(y: torch.Tensor, n: int) -> torch.Tensor:
+    """
+    y: (B, T, C, H, W)
+    Adjoint of causal average.
+    """
+    y_fp32 = y.float()
+    T = y.shape[1]
+
+    L = torch.arange(1, T + 1, device=y.device).clamp_max(n).view(1, T, 1, 1, 1)
+    z = y_fp32 / L
+    
+    cs = z.cumsum(dim=1)
+
+    e = (torch.arange(T, device=y.device) + n - 1).clamp_max(T - 1)
+    cs_end = cs.index_select(dim=1, index=e)
+
+    cs_before = torch.cat([torch.zeros_like(cs[:, :1]), cs[:, :-1]], dim=1)
+
+    return (cs_end - cs_before).to(dtype=y.dtype)
