@@ -9,11 +9,11 @@ NUM_REFINE_LIST=(
 )
 
 TASK_LIST=(
-    # deblur_gauss
-    # deblur_motion
-    # super_resolution
-    # random_inpainting
-    # box_inpainting
+    deblur_gauss
+    deblur_motion
+    super_resolution
+    random_inpainting
+    box_inpainting
     temporal_avg
 )
 

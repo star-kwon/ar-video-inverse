@@ -89,7 +89,7 @@ elif args.task == 'box_inpainting':
 elif args.task == 'random_inpainting':
     args.deg_scale = 0.92
 elif args.task == 'temporal_avg':
-    args.deg_scale = 13
+    args.deg_scale = 7
 else:
     raise NotImplementedError(f'Task {args.task} not implemented!')
 
