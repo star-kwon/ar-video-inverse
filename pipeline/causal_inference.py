@@ -625,7 +625,7 @@ class CausalRestorationPipeline(torch.nn.Module):
         if return_latents:
             return video, output
         else:
-            return video, measurement
+            return video
 
     def _initialize_kv_cache(self, batch_size, dtype, device):
         """
