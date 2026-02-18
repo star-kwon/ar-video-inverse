@@ -22,8 +22,7 @@ from munch import munchify
 from functions.degradation import get_degradation, wrap_operator_video
 
 parser = argparse.ArgumentParser()
-# problem params
-parser.add_argument('--task', type=str, default='deblur_gauss',
+parser.add_argument('--task_list', type=str, nargs='+', default=['deblur_gauss'],
     choices=[
         'deblur_gauss',
         'deblur_motion',
@@ -32,8 +31,7 @@ parser.add_argument('--task', type=str, default='deblur_gauss',
         'random_inpainting',
         'temporal_avg'
     ],
-    help='Degradation task type')
-parser.add_argument('--deg_scale', type=float, default=61)
+    help='List of degradation task types to run')
 parser.add_argument('--H', type=int, default=480)
 parser.add_argument('--W', type=int, default=832)
 parser.add_argument('--num_refine', type=int, default=3, help='Number of refinement steps')
@@ -43,7 +41,7 @@ parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint 
 parser.add_argument("--data_path", type=str, help="Path to the dataset")
 parser.add_argument("--extended_prompt_path", type=str, help="Path to the extended prompt")
 parser.add_argument("--output_folder", type=str, help="Output folder")
-parser.add_argument("--num_output_frames", type=int, default=21,
+parser.add_argument("--num_output_frames", type=int, default=18,#21,
                     help="Number of overlap frames between sliding windows")
 parser.add_argument("--restoration", action="store_true", help="Whether to perform restoration (or T2V by default)")
 parser.add_argument("--use_ema", action="store_true", help="Whether to use EMA parameters")
@@ -78,31 +76,6 @@ config = OmegaConf.merge(default_config, config)
 
 # load pipeline
 pipeline = CausalRestorationPipeline(config, device=device)
-
-# problem setup
-if args.task in ['deblur_gauss', 'deblur_motion']:
-    args.deg_scale = 61
-elif args.task == 'super_resolution':
-    args.deg_scale = 4
-elif args.task == 'box_inpainting':
-    args.deg_scale = 128
-elif args.task == 'random_inpainting':
-    args.deg_scale = 0.92
-elif args.task == 'temporal_avg':
-    args.deg_scale = 7
-else:
-    raise NotImplementedError(f'Task {args.task} not implemented!')
-
-deg_config = munchify({
-    'channels': 3,
-    'H': args.H,
-    'W': args.W,
-    'deg_scale': args.deg_scale
-    })
-operator = get_degradation(args.task, deg_config, device)
-
-if not args.task == 'temporal_avg':
-    operator = wrap_operator_video(operator)
 
 if args.checkpoint_path:
     state_dict = torch.load(args.checkpoint_path, map_location="cpu")
@@ -141,69 +114,98 @@ if local_rank == 0:
 if dist.is_initialized():
     dist.barrier()
 
-for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
-    idx = batch_data['idx'].item()
+for task in args.task_list:
+    if task in ['deblur_gauss', 'deblur_motion']:
+        deg_scale = 61
+    elif task == 'super_resolution':
+        deg_scale = 4
+    elif task == 'box_inpainting':
+        deg_scale = 128
+    elif task == 'random_inpainting':
+        deg_scale = 0.5
+    elif task == 'temporal_avg':
+        deg_scale = 7
+    else:
+        raise NotImplementedError(f'Task {task} not implemented!')
 
-    # For DataLoader batch_size=1, the batch_data is already a single item, but in a batch container
-    # Unpack the batch data for convenience
-    if isinstance(batch_data, dict):
-        batch = batch_data
-    elif isinstance(batch_data, list):
-        batch = batch_data[0]  # First (and only) item in the batch
-
-    all_video = []
-    num_generated_frames = 0  # Number of generated (latent) frames
-
-    if args.restoration:
-        prompt = batch['prompts'][0]  # Get caption from batch
-        prompts = [prompt] * args.num_samples
-        gt = batch['video'].to(device=device, dtype=torch.bfloat16)
-        y = operator.A(gt)
-        sampled_noise = torch.randn(
-            [args.num_samples, args.num_output_frames, 16, 60, 104], device=device, dtype=torch.bfloat16
-        )
+    deg_config = munchify({
+        'channels': 3,
+        'H': args.H,
+        'W': args.W,
+        'deg_scale': deg_scale
+    })
     
-    # Generate frames
-    video = pipeline.inference(
-        measurement=y,
-        operator=operator,
-        task=args.task,
-        noise=sampled_noise,
-        text_prompts=prompts,
-        return_latents=False,
-        low_memory=low_memory,
-        num_refine=args.num_refine,
-        ths_uncertainty=args.ths_uncertainty,
-    )
+    operator = get_degradation(task, deg_config, device)
+    if task != 'temporal_avg':
+        operator = wrap_operator_video(operator)
 
-    current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
-    gt = rearrange(gt , 'b t c h w -> b t h w c').cpu()
-    if args.task == 'super_resolution':
-        y = operator.At(y)
-    y = rearrange(y , 'b t c h w -> b t h w c').cpu()
-    all_video.append(current_video)
+    for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
+        idx = batch_data['idx'].item()
 
-    # Final output video
-    video = 255.0 * torch.cat(all_video, dim=1)
+        # For DataLoader batch_size=1, the batch_data is already a single item, but in a batch container
+        # Unpack the batch data for convenience
+        if isinstance(batch_data, dict):
+            batch = batch_data
+        elif isinstance(batch_data, list):
+            batch = batch_data[0]  # First (and only) item in the batch
 
-    # Clear VAE cache
-    pipeline.vae.model.clear_cache()
+        all_video = []
+        num_generated_frames = 0  # Number of generated (latent) frames
 
-    # Save the video if the current prompt is not a dummy prompt
-    if idx < num_prompts:
-        for seed_idx in range(args.num_samples):
-            base_name = f'{idx}-{seed_idx}'
-            
-            param_folder_name = f'threshold-{args.ths_uncertainty}_refine-{args.num_refine}'
-            task_folder = os.path.join(args.output_folder, param_folder_name, args.task)
-            os.makedirs(task_folder, exist_ok=True)
+        if args.restoration:
+            prompt = batch['prompts'][0]  # Get caption from batch
+            prompts = [prompt] * args.num_samples
+            gt = batch['video'].to(device=device, dtype=torch.bfloat16)
+            y = operator.A(gt)
+            sampled_noise = torch.randn(
+                [args.num_samples, args.num_output_frames, 16, 60, 104], device=device, dtype=torch.bfloat16
+            )
+        
+        # Generate frames
+        video, measurement_video = pipeline.inference(
+            measurement=y,
+            operator=operator,
+            task=task,
+            noise=sampled_noise,
+            text_prompts=prompts,
+            return_latents=False,
+            low_memory=low_memory,
+            num_refine=args.num_refine,
+            ths_uncertainty=args.ths_uncertainty,
+        )
 
-            output_path = os.path.join(task_folder, f'{base_name}_output.mp4')
-            gt_path     = os.path.join(task_folder, f'{base_name}_gt.mp4')
-            meas_path   = os.path.join(task_folder, f'{base_name}_meas.mp4')
+        current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
+        gt = rearrange(gt , 'b t c h w -> b t h w c').cpu()
+        if task == 'super_resolution':
+            y = operator.At(y)
+        y = rearrange(y , 'b t c h w -> b t h w c').cpu()
+        dds_y = rearrange(measurement_video, 'b t c h w -> b t h w c').cpu()
+        all_video.append(current_video)
 
-            write_video(output_path, video[seed_idx], fps=16)
-            if gt is not None:
-                write_video(gt_path, (gt[seed_idx] + 1.0) * 127.5, fps=16)
-            if y is not None:
-                write_video(meas_path, (y[seed_idx] + 1.0) * 127.5, fps=16)
+        # Final output video
+        video = 255.0 * torch.cat(all_video, dim=1)
+
+        # Clear VAE cache
+        pipeline.vae.model.clear_cache()
+
+        # Save the video if the current prompt is not a dummy prompt
+        if idx < num_prompts:
+            for seed_idx in range(args.num_samples):
+                base_name = f'{idx}-{prompt}'
+                
+                param_folder_name = f'threshold-{args.ths_uncertainty}_refine-{args.num_refine}'
+                task_folder = os.path.join(args.output_folder, param_folder_name, task)
+                os.makedirs(task_folder, exist_ok=True)
+
+                output_path = os.path.join(task_folder, f'{base_name}_output.mp4')
+                gt_path     = os.path.join(task_folder, f'{base_name}_gt.mp4')
+                meas_path   = os.path.join(task_folder, f'{base_name}_meas.mp4')
+                dds_meas_path   = os.path.join(task_folder, f'{base_name}_dds_meas.mp4')
+
+                write_video(output_path, video[seed_idx], fps=16)
+                if gt is not None:
+                    write_video(gt_path, (gt[seed_idx] + 1.0) * 127.5, fps=16)
+                if y is not None:
+                    write_video(meas_path, (y[seed_idx] + 1.0) * 127.5, fps=16)
+                if dds_y is not None:
+                    write_video(dds_meas_path, (dds_y[seed_idx] + 1.0) * 127.5, fps=16)
