@@ -162,7 +162,7 @@ for task in args.task_list:
             )
         
         # Generate frames
-        video, measurement_video = pipeline.inference(
+        video = pipeline.inference(
             measurement=y,
             operator=operator,
             task=task,
@@ -179,7 +179,6 @@ for task in args.task_list:
         if task == 'super_resolution':
             y = operator.At(y)
         y = rearrange(y , 'b t c h w -> b t h w c').cpu()
-        dds_y = rearrange(measurement_video, 'b t c h w -> b t h w c').cpu()
         all_video.append(current_video)
 
         # Final output video
@@ -207,5 +206,3 @@ for task in args.task_list:
                     write_video(gt_path, (gt[seed_idx] + 1.0) * 127.5, fps=16)
                 if y is not None:
                     write_video(meas_path, (y[seed_idx] + 1.0) * 127.5, fps=16)
-                if dds_y is not None:
-                    write_video(dds_meas_path, (dds_y[seed_idx] + 1.0) * 127.5, fps=16)
