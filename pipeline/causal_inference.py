@@ -459,9 +459,9 @@ class CausalRestorationPipeline(torch.nn.Module):
             measurement = measurement_up.view(b, t, c, h * s, w * s)
             measurement = torch.clamp(measurement, -1, 1)
         elif task== 'deblur_gauss':
-            measurement = conjugate_gradient(measurement, measurement, m=5)
+            measurement = conjugate_gradient(AT(measurement), measurement, m=5)
         else:
-            measurement = conjugate_gradient(measurement, measurement, m=10)
+            measurement = conjugate_gradient(AT(measurement), measurement, m=10)
 
         measurement_latent = self.vae.encode_to_latent(measurement.permute(0, 2, 1, 3, 4)).to(device=noise.device, dtype=noise.dtype)
         measurement_latent = measurement_latent.repeat(batch_size, 1, 1, 1, 1)
