@@ -10,10 +10,10 @@ NUM_REFINE_LIST=(
 
 TASK_LIST=(
     deblur_gauss
-    deblur_motion
+    # deblur_motion
     super_resolution
     random_inpainting
-    # temporal_avg
+    temporal_avg
 )
 
 TASKS_STR="${TASK_LIST[*]}"
