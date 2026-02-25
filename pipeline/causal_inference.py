@@ -448,20 +448,22 @@ class CausalRestorationPipeline(torch.nn.Module):
                 method="telea"
             )
         elif task == 'super_resolution':
-            b, t, c, h, w = measurement.shape
-            s = operator.scale_factor
-            measurement_up = measurement.view(b * t, c, h, w)
-            measurement_up = torch.nn.functional.interpolate(
-                measurement_up,
-                scale_factor=s,
-                mode='bilinear'
-            )
-            measurement = measurement_up.view(b, t, c, h * s, w * s)
+            # b, t, c, h, w = measurement.shape
+            # s = operator.scale_factor
+            # measurement_up = measurement.view(b * t, c, h, w)
+            # measurement_up = torch.nn.functional.interpolate(
+            #     measurement_up,
+            #     scale_factor=s,
+            #     mode='bilinear'
+            # )
+            measurement = conjugate_gradient(AT(measurement), measurement, m=5)
             measurement = torch.clamp(measurement, -1, 1)
         elif task== 'deblur_gauss':
             measurement = conjugate_gradient(measurement, measurement, m=5)
-        else:
-            measurement = conjugate_gradient(measurement, measurement, m=10)
+        elif task == 'temporal_avg':
+            measurement = conjugate_gradient(measurement, measurement, m=15)
+        elif task == 'deblur_motion':
+            measurement = conjugate_gradient(measurement, measurement, m=20)
 
         measurement_latent = self.vae.encode_to_latent(measurement.permute(0, 2, 1, 3, 4)).to(device=noise.device, dtype=noise.dtype)
         measurement_latent = measurement_latent.repeat(batch_size, 1, 1, 1, 1)
@@ -481,6 +483,7 @@ class CausalRestorationPipeline(torch.nn.Module):
                 :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames]
             measurement_latent_input = measurement_latent[
                 :, current_start_frame:current_start_frame + current_num_frames]
+
             if current_start_frame == 0:
                 frame_len = 9
             else:
@@ -508,7 +511,50 @@ class CausalRestorationPipeline(torch.nn.Module):
                         next_timestep
                     ).unflatten(0, denoised_pred.shape[:2])
                 
-                elif index < len(self.denoising_step_list) - 1:
+                # elif index < len(self.denoising_step_list) - 1:
+                #     _, denoised_pred = self.generator(
+                #         noisy_image_or_video=noisy_input,
+                #         conditional_dict=conditional_dict,
+                #         timestep=timestep,
+                #         kv_cache=self.kv_cache1,
+                #         crossattn_cache=self.crossattn_cache,
+                #         current_start=current_start_frame * self.frame_seq_length
+                #         )
+                #     # Step 3.1.1: A-priori interpolation
+                #     denoised_pred = measurement_latent_input + (1 - (timestep[0][0] / 1000)**0.5) * (denoised_pred - measurement_latent_input)
+                #     # Step 3.1.2: Self-refine
+                #     if num_refine != 0:
+                #         buffer = denoised_pred
+                #         for _ in range(num_refine):
+                #             noisy_input = self.scheduler.add_noise(
+                #                 denoised_pred.flatten(0, 1),
+                #                 torch.randn_like(denoised_pred.flatten(0, 1)),
+                #                 timestep.flatten(0, 1)
+                #                 ).unflatten(0, denoised_pred.shape[:2])
+                #             _, denoised_pred = self.generator(
+                #                 noisy_image_or_video=noisy_input,
+                #                 conditional_dict=conditional_dict,
+                #                 timestep=timestep,
+                #                 kv_cache=self.kv_cache1,
+                #                 crossattn_cache=self.crossattn_cache,
+                #                 current_start=current_start_frame * self.frame_seq_length
+                #                 )
+                #             uncertainty = torch.norm(denoised_pred - buffer, p=1, dim=1) / 16
+                #             certain_mask = uncertainty > ths_uncertainty
+                #             certain_mask_float = certain_mask.to(denoised_pred.dtype)
+                #             denoised_pred = certain_mask_float * denoised_pred + (1.0 - certain_mask_float) * buffer
+                #             buffer = denoised_pred
+                #     next_timestep = torch.ones(
+                #         [batch_size, current_num_frames],
+                #         device=noise.device,
+                #         dtype=torch.int64) * self.denoising_step_list[index + 1]
+                #     noisy_input = self.scheduler.add_noise(
+                #         denoised_pred.flatten(0, 1),
+                #         torch.randn_like(denoised_pred.flatten(0, 1)),
+                #         next_timestep
+                #     ).unflatten(0, denoised_pred.shape[:2])
+                
+                else:
                     _, denoised_pred = self.generator(
                         noisy_image_or_video=noisy_input,
                         conditional_dict=conditional_dict,
@@ -517,58 +563,52 @@ class CausalRestorationPipeline(torch.nn.Module):
                         crossattn_cache=self.crossattn_cache,
                         current_start=current_start_frame * self.frame_seq_length
                         )
-                    
-                    # First token update
-                    if first_token:
-                        # Step 3.1.1: Anchor update
-                        denoised_pred = measurement_latent_input + (1 - (timestep[0][0] / 1000)) * (denoised_pred - measurement_latent_input)
-                        
-                        # Step 3.1.2: Uncertainty correction
-                        if num_refine != 0:
+                    # Step 3.1.1: A-priori interpolation
+                    denoised_pred = measurement_latent_input + (1 - (timestep[0][0] / 1000)**0.5) * (denoised_pred - measurement_latent_input)
+                    # Step 3.1.2: Self-refine
+                    if num_refine != 0:
+                        buffer = denoised_pred
+                        for _ in range(num_refine):
+                            noisy_input = self.scheduler.add_noise(
+                                denoised_pred.flatten(0, 1),
+                                torch.randn_like(denoised_pred.flatten(0, 1)),
+                                timestep.flatten(0, 1)
+                                ).unflatten(0, denoised_pred.shape[:2])
+                            _, denoised_pred = self.generator(
+                                noisy_image_or_video=noisy_input,
+                                conditional_dict=conditional_dict,
+                                timestep=timestep,
+                                kv_cache=self.kv_cache1,
+                                crossattn_cache=self.crossattn_cache,
+                                current_start=current_start_frame * self.frame_seq_length
+                                )
+                            uncertainty = torch.norm(denoised_pred - buffer, p=1, dim=1) / 16
+                            certain_mask = uncertainty > ths_uncertainty
+                            certain_mask_float = certain_mask.to(denoised_pred.dtype)
+                            denoised_pred = certain_mask_float * denoised_pred + (1.0 - certain_mask_float) * buffer
                             buffer = denoised_pred
-                            for _ in range(num_refine):
-                                noisy_input = self.scheduler.add_noise(
-                                    denoised_pred.flatten(0, 1),
-                                    torch.randn_like(denoised_pred.flatten(0, 1)),
-                                    timestep.flatten(0, 1)
-                                    ).unflatten(0, denoised_pred.shape[:2])
-                                
-                                _, denoised_pred = self.generator(
-                                    noisy_image_or_video=noisy_input,
-                                    conditional_dict=conditional_dict,
-                                    timestep=timestep,
-                                    kv_cache=self.kv_cache1,
-                                    crossattn_cache=self.crossattn_cache,
-                                    current_start=current_start_frame * self.frame_seq_length
-                                    )
-                                
-                                uncertainty = torch.norm(denoised_pred - buffer, p=1, dim=1) / 16
-                                certain_mask = uncertainty > ths_uncertainty
-                                certain_mask_float = certain_mask.to(denoised_pred.dtype)
-                                denoised_pred = certain_mask_float * denoised_pred + (1.0 - certain_mask_float) * buffer
-                                buffer = denoised_pred
-                            
-                    next_timestep = torch.ones(
-                        [batch_size, current_num_frames],
-                        device=noise.device,
-                        dtype=torch.int64) * self.denoising_step_list[index + 1]
-                    noisy_input = self.scheduler.add_noise(
-                        denoised_pred.flatten(0, 1),
-                        torch.randn_like(denoised_pred.flatten(0, 1)),
-                        next_timestep
-                    ).unflatten(0, denoised_pred.shape[:2])
+                    if index < len(self.denoising_step_list) - 1:
+                        next_timestep = torch.ones(
+                            [batch_size, current_num_frames],
+                            device=noise.device,
+                            dtype=torch.int64) * self.denoising_step_list[index + 1]
+                        noisy_input = self.scheduler.add_noise(
+                            denoised_pred.flatten(0, 1),
+                            torch.randn_like(denoised_pred.flatten(0, 1)),
+                            next_timestep
+                        ).unflatten(0, denoised_pred.shape[:2])
+                    else:
+                        pass
 
-                else:
-                    _, denoised_pred = self.generator(
-                            noisy_image_or_video=noisy_input,
-                            conditional_dict=conditional_dict,
-                            timestep=timestep,
-                            kv_cache=self.kv_cache1,
-                            crossattn_cache=self.crossattn_cache,
-                            current_start=current_start_frame * self.frame_seq_length
-                        )
-                    if first_token:
-                        first_token = False
+                # else:
+                #     _, denoised_pred = self.generator(
+                #             noisy_image_or_video=noisy_input,
+                #             conditional_dict=conditional_dict,
+                #             timestep=timestep,
+                #             kv_cache=self.kv_cache1,
+                #             crossattn_cache=self.crossattn_cache,
+                #             current_start=current_start_frame * self.frame_seq_length
+                #         )
                     
             # Step 3.2: record the model's output
             output[:, current_start_frame:current_start_frame + current_num_frames] = denoised_pred

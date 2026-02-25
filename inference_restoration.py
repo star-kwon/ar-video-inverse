@@ -199,7 +199,6 @@ for task in args.task_list:
                 output_path = os.path.join(task_folder, f'{base_name}_output.mp4')
                 gt_path     = os.path.join(task_folder, f'{base_name}_gt.mp4')
                 meas_path   = os.path.join(task_folder, f'{base_name}_meas.mp4')
-                dds_meas_path   = os.path.join(task_folder, f'{base_name}_dds_meas.mp4')
 
                 write_video(output_path, video[seed_idx], fps=16)
                 if gt is not None:

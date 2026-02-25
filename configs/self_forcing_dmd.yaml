@@ -9,7 +9,7 @@ denoising_step_list:
 - 750
 - 500
 - 250
-warp_denoising_step: false # need to remove - 0 in denoising_step_list if warp_denoising_step is true
+warp_denoising_step: true # need to remove - 0 in denoising_step_list if warp_denoising_step is true
 ts_schedule: false
 num_train_timestep: 1000
 timestep_shift: 5.0

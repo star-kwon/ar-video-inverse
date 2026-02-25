@@ -5,7 +5,7 @@ THRESHOLD_LIST=(
 )
 
 NUM_REFINE_LIST=(
-    3
+    1
 )
 
 TASK_LIST=(
@@ -13,7 +13,7 @@ TASK_LIST=(
     deblur_motion
     super_resolution
     random_inpainting
-    temporal_avg
+    # temporal_avg
 )
 
 TASKS_STR="${TASK_LIST[*]}"

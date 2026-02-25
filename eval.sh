@@ -1,0 +1,1 @@
+python eval.py --root folder_dir --metric psnr ssim lpips fid fvd --out_suffix "output.mp4" --gt_suffix "gt.mp4"

@@ -91,7 +91,7 @@ class SuperResolutionOperator(LinearOperator):
         self.device = device
         self.scale_factor = scale_factor
         self.down_sample = lambda x: F.interpolate(x, scale_factor=1/scale_factor, mode='area')
-        self.up_sample = lambda x: F.interpolate(x, scale_factor=scale_factor, mode='nearest')
+        self.up_sample = lambda x: F.interpolate(x, scale_factor=scale_factor, mode='bilinear')
 
     def A(self, data, **kwargs):
         return self.forward(data, **kwargs)
@@ -181,7 +181,7 @@ class GaussialBlurOperator(LinearOperator):
         pass
 
     def transpose(self, data, **kwargs):
-        return self.conv(data)
+        return data
 
     def get_kernel(self):
         return self.kernel.view(1, 1, self.kernel_size, self.kernel_size)
