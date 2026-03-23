@@ -15,6 +15,8 @@ from utils.resizer import Resizer
 from utils.motionblur import Kernel
 from utils.inpaint_util import generate_random_mask, generate_box_mask
 
+from einops import rearrange
+
 # =================
 # Operation classes
 # =================
@@ -334,6 +336,42 @@ class TemporalAvgOperator(LinearOperator):
 
     def transpose(self, data, **kwargs):
         return causal_avg_transpose(data, self.n)
+
+    def noisy_forward(self, data, **kwargs):
+        raise NotImplementedError
+
+    def A(self, data):
+        return self.forward(data)
+
+    def At(self, data):
+        return self.transpose(data)
+
+@register_operator(name="spatio_temporal_avg")
+class SpatioTemporalAvgOperator(LinearOperator):
+    def __init__(self, scale_factor: float = 4.0, kernel_size: int = 4, device=None):
+        self.device = device
+        self.n = int(kernel_size)
+        self.scale_factor = float(scale_factor)
+
+    def forward(self, data, **kwargs):
+        if self.scale_factor > 1.0:
+            b, t = data.shape[0], data.shape[1]
+            data_4d = rearrange(data, 'b t c h w -> (b t) c h w').float()
+            data_4d_down = F.interpolate(data_4d, scale_factor=1.0/self.scale_factor, mode='area')
+            data = rearrange(data_4d_down, '(b t) c h w -> b t c h w', b=b, t=t).to(data.dtype)
+
+        return causal_avg_forward(data, self.n)
+
+    def transpose(self, data, **kwargs):
+        data = causal_avg_transpose(data, self.n)
+
+        if self.scale_factor > 1.0:
+            b, t = data.shape[0], data.shape[1]
+            data_4d = rearrange(data, 'b t c h w -> (b t) c h w').float()
+            data_4d_up = F.interpolate(data_4d, scale_factor=self.scale_factor, mode='bilinear')
+            data = rearrange(data_4d_up, '(b t) c h w -> b t c h w', b=b, t=t).to(data.dtype)
+
+        return data
 
     def noisy_forward(self, data, **kwargs):
         raise NotImplementedError

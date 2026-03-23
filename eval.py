@@ -406,11 +406,16 @@ def main():
             half_precision=args.half,
         )
 
-    # Print
-    print("\n===== Results =====")
-    for k in args.metric:
-        print(f"{k}: {results.get(k, float('nan'))}")
 
+    save_path = os.path.join(args.root, "results.txt")
+    # Print & Save
+    print("\n===== Results =====")
+    with open(save_path, "w", encoding="utf-8") as f:
+        f.write("===== Results =====\n")
+        for k in args.metric:
+            line = f"{k}: {results.get(k, float('nan'))}"
+            print(line)
+            f.write(line + "\n")
 
 if __name__ == "__main__":
     main()

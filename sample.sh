@@ -1,27 +1,27 @@
 #!/bin/bash
 
-THRESHOLD_LIST=(
-    0.5
+INITIALIZATION_LIST=(
+    100
 )
 
-NUM_REFINE_LIST=(
-    1
+SAMPLING_LIST=(
+    2
 )
 
 TASK_LIST=(
     deblur_gauss
-    # deblur_motion
-    super_resolution
     random_inpainting
+    super_resolution
     temporal_avg
+    spatio_temporal_avg
 )
 
 TASKS_STR="${TASK_LIST[*]}"
 
-for threshold in "${THRESHOLD_LIST[@]}"; do
-    for refine_count in "${NUM_REFINE_LIST[@]}"; do
+for initialization_step in "${INITIALIZATION_LIST[@]}"; do
+    for sampling_step in "${SAMPLING_LIST[@]}"; do
         echo "================================================================"
-        echo "Running: tasks=[${TASKS_STR}], ths=${threshold}, refine=${refine_count}"
+        echo "Running: tasks=[${TASKS_STR}], initialization_step=${initialization_step}, sampling_step=${sampling_step}"
         echo "================================================================"
 
         OUTPUT_DIR="videos/self_forcing_dmd"
@@ -30,12 +30,12 @@ for threshold in "${THRESHOLD_LIST[@]}"; do
             --config_path configs/self_forcing_dmd.yaml \
             --output_folder "${OUTPUT_DIR}" \
             --checkpoint_path checkpoints/self_forcing_dmd.pt \
-            --data_path /mnt/storage/projects/Self-Forcing/data/samples \
+            --data_path /mnt/storage/projects/Self-Forcing/data/pexels \
             --task_list ${TASK_LIST[@]} \
             --use_ema \
             --restoration \
-            --ths_uncertainty "${threshold}" \
-            --num_refine "${refine_count}"
+            --initialization_step "${initialization_step}" \
+            --sampling_step "${sampling_step}"
     done
 done
 

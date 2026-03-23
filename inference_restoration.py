@@ -21,27 +21,28 @@ from demo_utils.memory import gpu, get_cuda_free_memory_gb, DynamicSwapInstaller
 from munch import munchify
 from functions.degradation import get_degradation, wrap_operator_video
 
+import torch.nn.functional as F
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--task_list', type=str, nargs='+', default=['deblur_gauss'],
     choices=[
         'deblur_gauss',
-        'deblur_motion',
         'super_resolution',
-        'box_inpainting',
         'random_inpainting',
-        'temporal_avg'
+        'temporal_avg',
+        'spatio_temporal_avg',
     ],
     help='List of degradation task types to run')
 parser.add_argument('--H', type=int, default=480)
 parser.add_argument('--W', type=int, default=832)
-parser.add_argument('--num_refine', type=int, default=3, help='Number of refinement steps')
-parser.add_argument('--ths_uncertainty', type=float, default=0.5, help='Threshold for uncertainty masking')
+parser.add_argument('--initialization_step', type=int, default=0, help='Step for initialization')
+parser.add_argument('--sampling_step', type=int, default=0, help='Step for sampling')
 parser.add_argument("--config_path", type=str, help="Path to the config file")
 parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint folder")
 parser.add_argument("--data_path", type=str, help="Path to the dataset")
 parser.add_argument("--extended_prompt_path", type=str, help="Path to the extended prompt")
 parser.add_argument("--output_folder", type=str, help="Output folder")
-parser.add_argument("--num_output_frames", type=int, default=18,#21,
+parser.add_argument("--num_output_frames", type=int, default=21,
                     help="Number of overlap frames between sliding windows")
 parser.add_argument("--restoration", action="store_true", help="Whether to perform restoration (or T2V by default)")
 parser.add_argument("--use_ema", action="store_true", help="Whether to use EMA parameters")
@@ -75,7 +76,7 @@ default_config = OmegaConf.load("configs/default_config.yaml")
 config = OmegaConf.merge(default_config, config)
 
 # load pipeline
-pipeline = CausalRestorationPipeline(config, device=device)
+pipeline = CausalRestorationPipeline(config, device=device, initialization_step=args.initialization_step, sampling_step=args.sampling_step)
 
 if args.checkpoint_path:
     state_dict = torch.load(args.checkpoint_path, map_location="cpu")
@@ -115,12 +116,10 @@ if dist.is_initialized():
     dist.barrier()
 
 for task in args.task_list:
-    if task in ['deblur_gauss', 'deblur_motion']:
+    if task == 'deblur_gauss':
         deg_scale = 61
-    elif task == 'super_resolution':
+    elif task in ['super_resolution', 'spatio_temporal_avg']:
         deg_scale = 4
-    elif task == 'box_inpainting':
-        deg_scale = 128
     elif task == 'random_inpainting':
         deg_scale = 0.5
     elif task == 'temporal_avg':
@@ -136,7 +135,7 @@ for task in args.task_list:
     })
     
     operator = get_degradation(task, deg_config, device)
-    if task != 'temporal_avg':
+    if task not in ['temporal_avg', 'spatio_temporal_avg']:
         operator = wrap_operator_video(operator)
 
     for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
@@ -169,16 +168,17 @@ for task in args.task_list:
             noise=sampled_noise,
             text_prompts=prompts,
             return_latents=False,
-            low_memory=low_memory,
-            num_refine=args.num_refine,
-            ths_uncertainty=args.ths_uncertainty,
+            low_memory=low_memory
         )
 
         current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
-        gt = rearrange(gt , 'b t c h w -> b t h w c').cpu()
-        if task == 'super_resolution':
-            y = operator.At(y)
-        y = rearrange(y , 'b t c h w -> b t h w c').cpu()
+        gt = rearrange(gt, 'b t c h w -> b t h w c').cpu()
+        if task in ['super_resolution', 'spatio_temporal_avg']:
+            b, t = y.shape[0], y.shape[1]
+            y = rearrange(y, 'b t c h w -> (b t) c h w').float()
+            y = F.interpolate(y, scale_factor=deg_scale, mode='nearest')
+            y = rearrange(y, '(b t) c h w -> b t c h w', b=b, t=t).to(y.dtype)
+        y = rearrange(y, 'b t c h w -> b t h w c').cpu()
         all_video.append(current_video)
 
         # Final output video
@@ -192,7 +192,7 @@ for task in args.task_list:
             for seed_idx in range(args.num_samples):
                 base_name = f'{idx}-{prompt}'
                 
-                param_folder_name = f'threshold-{args.ths_uncertainty}_refine-{args.num_refine}'
+                param_folder_name = f'initialization_step-{args.initialization_step}_sampling_step-{args.sampling_step}'
                 task_folder = os.path.join(args.output_folder, param_folder_name, task)
                 os.makedirs(task_folder, exist_ok=True)
 

@@ -78,6 +78,15 @@ def deg_temporal_avg(deg_config, device):
     )
     return A_funcs
 
+@register_degradation(name='spatio_temporal_avg')
+def deg_spatio_temporal_avg(deg_config, device):
+    A_funcs = measurements.SpatioTemporalAvgOperator(
+        scale_factor=deg_config.deg_scale,
+        kernel_size=deg_config.deg_scale,
+        device=device
+    )
+    return A_funcs
+
 from functions.jpeg import jpeg_encode, jpeg_decode
 
 class JPEGOperator():
