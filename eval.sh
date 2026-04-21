@@ -1,1 +1,1 @@
-# python eval.py --root /path/to/output/folder --metric psnr ssim lpips fid fvd
+# python eval.py --root /path/to/results/folder --metric psnr ssim lpips fid fvd

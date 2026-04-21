@@ -24,7 +24,7 @@ for initialization_step in "${INITIALIZATION_LIST[@]}"; do
         echo "Running: tasks=[${TASKS_STR}], initialization_step=${initialization_step}, sampling_step=${sampling_step}"
         echo "================================================================"
 
-        OUTPUT_DIR="videos/self_forcing_dmd"
+        OUTPUT_DIR="results"
 
         python inference_restoration.py \
             --config_path configs/self_forcing_dmd.yaml \

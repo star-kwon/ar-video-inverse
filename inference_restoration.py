@@ -13,7 +13,7 @@ from torch.utils.data.distributed import DistributedSampler
 from pipeline import (
     CausalRestorationPipeline
 )
-from utils.dataset import TextDataset, TextImagePairDataset, VideoDataset
+from utils.dataset import VideoDataset
 from utils.misc import set_seed
 
 from demo_utils.memory import gpu, get_cuda_free_memory_gb, DynamicSwapInstaller
@@ -35,8 +35,8 @@ parser.add_argument('--task_list', type=str, nargs='+', default=['deblur_gauss']
     help='List of degradation task types to run')
 parser.add_argument('--H', type=int, default=480)
 parser.add_argument('--W', type=int, default=832)
-parser.add_argument('--initialization_step', type=int, default=0, help='Step for initialization')
-parser.add_argument('--sampling_step', type=int, default=0, help='Step for sampling')
+parser.add_argument('--initialization_step', type=int, default=100, help='Step for initialization')
+parser.add_argument('--sampling_step', type=int, default=2, help='Step for sampling')
 parser.add_argument("--config_path", type=str, help="Path to the config file")
 parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint folder")
 parser.add_argument("--data_path", type=str, help="Path to the dataset")
@@ -171,6 +171,7 @@ for task in args.task_list:
             low_memory=low_memory
         )
 
+        # Resize for visualization
         current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
         gt = rearrange(gt, 'b t c h w -> b t h w c').cpu()
         if task in ['super_resolution', 'spatio_temporal_avg']:
@@ -190,15 +191,15 @@ for task in args.task_list:
         # Save the video if the current prompt is not a dummy prompt
         if idx < num_prompts:
             for seed_idx in range(args.num_samples):
-                base_name = f'{idx}-{prompt}'
+                base_name = f'{idx}'
                 
-                param_folder_name = f'initialization_step-{args.initialization_step}_sampling_step-{args.sampling_step}'
+                param_folder_name = f'init-{args.initialization_step}_samp-{args.sampling_step}'
                 task_folder = os.path.join(args.output_folder, param_folder_name, task)
                 os.makedirs(task_folder, exist_ok=True)
 
-                output_path = os.path.join(task_folder, f'{base_name}_output.mp4')
-                gt_path     = os.path.join(task_folder, f'{base_name}_gt.mp4')
-                meas_path   = os.path.join(task_folder, f'{base_name}_meas.mp4')
+                output_path = os.path.join(task_folder, f'{base_name}_recon.mp4')
+                gt_path     = os.path.join(task_folder, f'{base_name}_label.mp4')
+                meas_path   = os.path.join(task_folder, f'{base_name}_input.mp4')
 
                 write_video(output_path, video[seed_idx], fps=16)
                 if gt is not None:

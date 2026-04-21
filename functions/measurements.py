@@ -7,13 +7,7 @@ from torch.nn import functional as F
 from torchvision import torch
 
 from utils.blur_util import Blurkernel
-from utils.img_util import fft2d
-import numpy as np
-from torch.fft import fft2, ifft2
-from utils.resizer import Resizer
-
-from utils.motionblur import Kernel
-from utils.inpaint_util import generate_random_mask, generate_box_mask
+from utils.inpaint_util import generate_random_mask
 
 from einops import rearrange
 
@@ -116,51 +110,6 @@ class SuperResolutionOperator(LinearOperator):
     def At(self, data):
         return self.transpose(data)
 
-
-@register_operator(name='deblur_motion')
-class MotionBlurOperator(LinearOperator):
-    def __init__(self,
-                 kernel_size,
-                 intensity,
-                 device):
-        self.device = device
-        self.kernel_size = kernel_size
-        self.conv = Blurkernel(blur_type='motion',
-                               kernel_size=kernel_size,
-                               std=intensity,
-                               device=device).to(device)  # should we keep this device term?
-
-        self.kernel_size =kernel_size
-        self.intensity = intensity
-        self.kernel = Kernel(size=(kernel_size, kernel_size), intensity=intensity)
-        kernel = torch.tensor(self.kernel.kernelMatrix, dtype=torch.float32)
-        self.conv.update_weights(kernel)
-
-    def forward(self, data, **kwargs):
-        # A^T * A
-        return self.conv(data)
-
-    def noisy_forward(self, data, **kwargs):
-        pass
-
-    def transpose(self, data, **kwargs):
-        return self.conv.transpose(data)
-
-    def change_kernel(self):
-        self.kernel = Kernel(size=(self.kernel_size, self.kernel_size), intensity=self.intensity)
-        kernel = torch.tensor(self.kernel.kernelMatrix, dtype=torch.float32)
-        self.conv.update_weights(kernel)
-
-    def get_kernel(self):
-        kernel = self.kernel.kernelMatrix.type(torch.float32).to(self.device)
-        return kernel.view(1, 1, self.kernel_size, self.kernel_size)
-
-    def A(self, data):
-        return self.forward(data)
-
-    def At(self, data):
-        return self.transpose(data)
-
 @register_operator(name='deblur_gauss')
 class GaussialBlurOperator(LinearOperator):
     def __init__(self,
@@ -191,35 +140,6 @@ class GaussialBlurOperator(LinearOperator):
     def apply_kernel(self, data, kernel):
         self.conv.update_weights(kernel.type(torch.float32))
         return self.conv(data)
-
-    def A(self, data):
-        return self.forward(data)
-
-    def At(self, data):
-        return self.transpose(data)
-
-@register_operator(name='box_inpainting')
-class BoxInpaintingOperator(LinearOperator):
-    def __init__(self,
-                 C,
-                 H,
-                 W,
-                 size,
-                 device):
-        self.device = device
-        self.mask = generate_box_mask(shape=(1, C, H, W), box_size=int(size)).to(device)
-        # self.mask = generate_random_mask(shape=(1, C, H, W), pixel_ratio=ratio).to(device)
-
-    def forward(self, data, **kwargs):
-        data = data * self.mask
-        return data
-
-    def noisy_forward(self, data, **kwargs):
-        pass
-
-    def transpose(self, data, **kwargs):
-        data = data * self.mask
-        return data
 
     def A(self, data):
         return self.forward(data)

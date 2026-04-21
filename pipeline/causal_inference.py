@@ -3,14 +3,11 @@ import torch
 
 from utils.wan_wrapper import WanDiffusionWrapper, WanTextEncoder, WanVAEWrapper
 
-from demo_utils.memory import gpu, get_cuda_free_memory_gb, DynamicSwapInstaller, move_model_to_device_with_memory_preservation
+from demo_utils.memory import gpu, get_cuda_free_memory_gb, move_model_to_device_with_memory_preservation
 
 from functions.conjugate_gradient import CG
 
 from utils.inpaint_util import inpaint_video
-from torch.utils.checkpoint import checkpoint
-import torchvision
-import time
 from einops import rearrange
 import torch.nn.functional as F
 
@@ -349,8 +346,6 @@ class CausalRestorationPipeline(torch.nn.Module):
         # Step 2: Initialize all causal hyperparmeters
         self.scheduler = self.generator.get_scheduler()
 
-        # self.denoising_step_list = torch.tensor(
-        #     args.denoising_step_list, dtype=torch.long)
         init_step = initialization_step
         samp_step = sampling_step
         interval = init_step // samp_step
@@ -437,10 +432,7 @@ class CausalRestorationPipeline(torch.nn.Module):
                 self.kv_cache1[block_index]["local_end_index"] = torch.tensor(
                     [0], dtype=torch.long, device=noise.device)
 
-        start_time = time.time()
-        
-        # Step 2: Initialization
-        # We skip CG update for inpainting and SR since it will return identical output
+        # Step 2: Measurement-consistent Initialization
         if task == 'random_inpainting':
             measurement_init = inpaint_video(
                 video=measurement,
@@ -449,7 +441,6 @@ class CausalRestorationPipeline(torch.nn.Module):
                 method="telea"
             )
         elif task in ['super_resolution', 'spatio_temporal_avg']:
-            # Match dimension of initialization
             b, t = measurement.shape[0], measurement.shape[1]
             measurement_up = rearrange(measurement, 'b t c h w -> (b t) c h w').float()
             measurement_up = F.interpolate(measurement_up, scale_factor=4, mode='bilinear')
@@ -487,9 +478,6 @@ class CausalRestorationPipeline(torch.nn.Module):
         measurement_latent = self.vae.encode_to_latent(measurement_init.permute(0, 2, 1, 3, 4)).to(device=noise.device, dtype=noise.dtype)
         measurement_latent = measurement_latent.repeat(batch_size, 1, 1, 1, 1)
 
-        initialization_time = time.time() - start_time
-        start_time = time.time()
-
         # Step 3: Temporal denoising loop
         current_start_frame = 0
         offset = 0
@@ -522,8 +510,8 @@ class CausalRestorationPipeline(torch.nn.Module):
                     pass
 
                 elif index >= initialization_index:
-                    # 1. Initialize
                     if index == initialization_index:
+                        # 3.1.1. Renoise to start time t0
                         denoised_pred = measurement_latent_input
                         noisy_input = self.scheduler.add_noise(
                             denoised_pred.flatten(0, 1),
@@ -531,7 +519,7 @@ class CausalRestorationPipeline(torch.nn.Module):
                             timestep
                         ).unflatten(0, denoised_pred.shape[:2])
 
-                    # 2. Denoising step
+                    # 3.1.2. Denoising step
                     _, denoised_pred = self.generator(
                         noisy_image_or_video=noisy_input,
                         conditional_dict=conditional_dict,
@@ -541,7 +529,7 @@ class CausalRestorationPipeline(torch.nn.Module):
                         current_start=current_start_frame * self.frame_seq_length
                     )
 
-                    # 3. Proximal Update (Data Consistency)
+                    # 3.1.3. Proximal Update (Data Consistency)
                     if initial_token:
                         x0_hat = self.vae.decode_to_pixel(denoised_pred, use_cache=False).to(denoised_pred.dtype)
                         updated_x0_hat = self.CG(
@@ -554,7 +542,7 @@ class CausalRestorationPipeline(torch.nn.Module):
                     else:
                         pass
                     
-                    # 3-4. Re-noise or proximal update the loop
+                    # 3.1.4. Re-noise to nest timestep
                     is_last_index = (index == len(self.denoising_step_list) - 1)
                     if not is_last_index:
                         next_timestep = torch.ones(
@@ -572,7 +560,7 @@ class CausalRestorationPipeline(torch.nn.Module):
 
             initial_token = False
                     
-            # Step 3.2: record the model's output
+            # Step 3.2: update the model's output
             output[:, current_start_frame:current_start_frame + current_num_frames] = denoised_pred
             
             # Step 3.3: rerun with timestep zero to update KV cache using clean context
@@ -593,18 +581,9 @@ class CausalRestorationPipeline(torch.nn.Module):
             current_start_frame += current_num_frames
             offset += frame_len
 
-        diffusion_time = time.time() - start_time
-        start_time = time.time()
-
         # Step 4: Decode the output
         video = self.vae.decode_to_pixel(output, use_cache=False)
         video = (video * 0.5 + 0.5).clamp(0, 1)
-
-        vae_time = time.time() - start_time
-
-        print(f"  - Initialization time: {initialization_time:.2f} s")
-        print(f"  - Diffusion sampling time: {diffusion_time:.2f} s")
-        print(f"  - VAE decoding time: {vae_time:.2f} s")
 
         if return_latents:
             return video, output

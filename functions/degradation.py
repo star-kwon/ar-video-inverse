@@ -1,10 +1,7 @@
-import numpy as np
 import torch
 from munch import Munch
 
-import functions.svd_operators as svd_op
 from functions import measurements
-from utils.inpaint_util import MaskGenerator
 from einops import rearrange
 
 __DEGRADATION__ = {}
@@ -33,25 +30,6 @@ def deg_inpainting(deg_config, device):
                                             device=device)
     return A_funcs
 
-@register_degradation(name='box_inpainting')
-def deg_inpainting(deg_config, device):
-    A_funcs = measurements.BoxInpaintingOperator(deg_config.channels,
-                                            deg_config.H,
-                                            deg_config.W,
-                                            size=deg_config.deg_scale,
-                                            device=device)
-    return A_funcs
-
-@register_degradation(name='deblur_motion')
-def deg_deblur_motion(deg_config, device):
-    A_funcs = measurements.MotionBlurOperator(
-        kernel_size=deg_config.deg_scale,
-        intensity=0.5,
-        device=device
-    )
-    return A_funcs
-
-# ======= FOR arbitraty image size =======
 @register_degradation(name='super_resolution')
 def deg_sr_general(deg_config, device):
     blur_by = int(deg_config.deg_scale)
@@ -86,30 +64,6 @@ def deg_spatio_temporal_avg(deg_config, device):
         device=device
     )
     return A_funcs
-
-from functions.jpeg import jpeg_encode, jpeg_decode
-
-class JPEGOperator():
-    def __init__(self, qf: int, device):
-        self.qf = qf
-        self.device = device
-
-    def A(self, img):
-        x_luma, x_chroma = jpeg_encode(img, self.qf)
-        return x_luma, x_chroma
-
-    def At(self, encoded):
-        return jpeg_decode(encoded, self.qf)
-
-
-@register_degradation(name='jpeg')
-def deg_jpeg(deg_config, device):
-    A_funcs = JPEGOperator(
-        qf = deg_config.deg_scale,
-        device=device
-    )
-    return A_funcs
-
 
 def wrap_operator_video(operator):
     def _wrap_fn(fn, fn_name: str):

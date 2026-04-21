@@ -72,7 +72,7 @@ def read_video_as_tensor(
 # -------------------------
 # Pair discovery
 # -------------------------
-def find_video_pairs(root: Path, gt_suffix="_gt.mp4", out_suffix="_output.mp4") -> List[Tuple[Path, Path]]:
+def find_video_pairs(root: Path, gt_suffix="_label.mp4", out_suffix="_recon.mp4") -> List[Tuple[Path, Path]]:
     gts = sorted(root.glob(f"*{gt_suffix}"))
     pairs = []
     for gt in gts:
@@ -83,7 +83,7 @@ def find_video_pairs(root: Path, gt_suffix="_gt.mp4", out_suffix="_output.mp4") 
     return pairs
 
 
-def list_sets(root: Path, gt_suffix="_gt.mp4", out_suffix="_output.mp4") -> Tuple[List[Path], List[Path]]:
+def list_sets(root: Path, gt_suffix="_label.mp4", out_suffix="_recon.mp4") -> Tuple[List[Path], List[Path]]:
     pairs = find_video_pairs(root, gt_suffix, out_suffix)
     gt_paths = [p[0] for p in pairs]
     out_paths = [p[1] for p in pairs]
@@ -301,11 +301,11 @@ def compute_fvd_cdfvd(
 # -------------------------
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, required=True, help="Folder containing *_gt.mp4 and *_output.mp4")
+    parser.add_argument("--root", type=Path, required=True, help="Folder containing *_label.mp4 and *_recon.mp4")
     parser.add_argument("--metric", type=str, nargs="+", required=True,
                         choices=["psnr", "ssim", "lpips", "fid", "fvd"])
-    parser.add_argument("--gt_suffix", type=str, default="_gt.mp4")
-    parser.add_argument("--out_suffix", type=str, default="_output.mp4")
+    parser.add_argument("--gt_suffix", type=str, default="_label.mp4")
+    parser.add_argument("--out_suffix", type=str, default="_recon.mp4")
 
     # common
     parser.add_argument("--device", type=str, default="cuda")
@@ -421,4 +421,4 @@ if __name__ == "__main__":
     main()
 
 ## Run with the following code
-# python eval.py --root /path/to/output/folder --metric psnr ssim lpips fid fvd
+# python eval.py --root /path/to/results/folder --metric psnr ssim lpips fid fvd
