@@ -9,11 +9,11 @@ SAMPLING_LIST=(
 )
 
 TASK_LIST=(
-    deblur_gauss
-    random_inpainting
     super_resolution
     temporal_avg
     spatio_temporal_avg
+    deblur_gauss
+    random_inpainting
 )
 
 TASKS_STR="${TASK_LIST[*]}"
@@ -26,11 +26,11 @@ for initialization_step in "${INITIALIZATION_LIST[@]}"; do
 
         OUTPUT_DIR="results"
 
-        python inference_restoration.py \
+        python causal_restoration.py \
             --config_path configs/self_forcing_dmd.yaml \
             --output_folder "${OUTPUT_DIR}" \
             --checkpoint_path checkpoints/self_forcing_dmd.pt \
-            --data_path /mnt/storage/projects/Self-Forcing/data/pexels \
+            --data_path ./data/pexels \
             --task_list ${TASK_LIST[@]} \
             --use_ema \
             --restoration \
@@ -39,4 +39,4 @@ for initialization_step in "${INITIALIZATION_LIST[@]}"; do
     done
 done
 
-echo "All inference tasks are completed!"
+echo "All restoration tasks are completed!"

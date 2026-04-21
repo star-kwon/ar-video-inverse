@@ -3,14 +3,11 @@ from torch import nn
 import numpy as np
 import scipy
 
-from utils.motionblur import Kernel as MotionKernel
-
 import torch.nn.functional as F
 
 class Blurkernel(nn.Module):
-    def __init__(self, blur_type='gaussian', kernel_size=31, std=3.0, device=None):
+    def __init__(self, kernel_size=31, std=3.0, device=None):
         super().__init__()
-        self.blur_type = blur_type
         self.kernel_size = kernel_size
         self.std = std
         self.device = device
@@ -35,20 +32,13 @@ class Blurkernel(nn.Module):
         return z
 
     def weights_init(self):
-        if self.blur_type == "gaussian":
-            n = np.zeros((self.kernel_size, self.kernel_size))
-            n[self.kernel_size // 2,self.kernel_size // 2] = 1
-            k = scipy.ndimage.gaussian_filter(n, sigma=self.std)
-            k = torch.from_numpy(k)
-            self.k = k
-            for name, f in self.named_parameters():
-                f.data.copy_(k)
-        elif self.blur_type == "motion":
-            k = MotionKernel(size=(self.kernel_size, self.kernel_size), intensity=self.std).kernelMatrix
-            k = torch.from_numpy(k)
-            self.k = k
-            for name, f in self.named_parameters():
-                f.data.copy_(k)
+        n = np.zeros((self.kernel_size, self.kernel_size))
+        n[self.kernel_size // 2,self.kernel_size // 2] = 1
+        k = scipy.ndimage.gaussian_filter(n, sigma=self.std)
+        k = torch.from_numpy(k)
+        self.k = k
+        for name, f in self.named_parameters():
+            f.data.copy_(k)
 
     def update_weights(self, k):
         if not torch.is_tensor(k):

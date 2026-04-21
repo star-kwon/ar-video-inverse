@@ -16,7 +16,7 @@ from pipeline import (
 from utils.dataset import VideoDataset
 from utils.misc import set_seed
 
-from demo_utils.memory import gpu, get_cuda_free_memory_gb, DynamicSwapInstaller
+from utils.memory import gpu, get_cuda_free_memory_gb, DynamicSwapInstaller
 
 from munch import munchify
 from functions.degradation import get_degradation, wrap_operator_video
@@ -188,7 +188,7 @@ for task in args.task_list:
         # Clear VAE cache
         pipeline.vae.model.clear_cache()
 
-        # Save the video if the current prompt is not a dummy prompt
+        # Save the video
         if idx < num_prompts:
             for seed_idx in range(args.num_samples):
                 base_name = f'{idx}'

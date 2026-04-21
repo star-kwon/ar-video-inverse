@@ -29,7 +29,7 @@
 We tested this repo on the following setup:
 * Nvidia GPU with at least 24 GB memory (RTX 4090 and H100 are tested).
 * Linux operating system.
-* 64 GB RAM.
+* 32 GB RAM.
 
 Other hardware setup could also work but hasn't been tested.
 

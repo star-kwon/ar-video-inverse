@@ -118,8 +118,7 @@ class GaussialBlurOperator(LinearOperator):
                  device):
         self.device = device
         self.kernel_size = kernel_size
-        self.conv = Blurkernel(blur_type='gaussian',
-                               kernel_size=kernel_size,
+        self.conv = Blurkernel(kernel_size=kernel_size,
                                std=intensity,
                                device=device).to(device)
         self.kernel = self.conv.get_kernel()
