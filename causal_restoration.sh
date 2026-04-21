@@ -30,7 +30,7 @@ for initialization_step in "${INITIALIZATION_LIST[@]}"; do
             --config_path configs/self_forcing_dmd.yaml \
             --output_folder "${OUTPUT_DIR}" \
             --checkpoint_path checkpoints/self_forcing_dmd.pt \
-            --data_path ./data/pexels \
+            --data_path ./data \
             --task_list ${TASK_LIST[@]} \
             --use_ema \
             --restoration \

@@ -1,40 +1,43 @@
-<p align="center">
-<h1 align="center">Accelerating Video Inverse Problem Solvers with Autoregressive Diffusion Models</h1>
-
 <div align="center">
-  <h2>🚀 AVIS: Autoregressive Video Inverse problem Solver</h2>
-  <p>An autoregressive video diffusion framework for <b>streaming video restoration</b>.</p>
+
+# Accelerating Video Inverse Problem Solvers with Autoregressive Diffusion Models
+
+**AVIS (Autoregressive Video Inverse problem Solver)** is an autoregressive video diffusion framework designed for **accelerating video restoration** toward real-time deployment.
+
 </div>
 
-<h3>✨ Key Features</h3>
-<ul>
-  <li><strong>Streaming Restoration:</strong> Naturally eliminates latency bottlenecks by leveraging autoregressive video diffusion models.</li>
-  <li><strong>Initialization for Better Starting Point:</strong> Reduces sampling steps by initializing the reverse diffusion with a measurement-consistent estimate.</li>
-</ul>
+---
 
-<h4>⚡ AVIS <em>Flash</em>: Highly Accelerated Variant</h3>
-<!-- <p>A high-throughput version of AVIS designed to pave the way toward real-time deployment.</p> -->
-<ul>
-  <li><strong>Acceleration with Autoregressive Propagation:</strong> Enforces measurement consistency solely on the first video chunk. Subsequent chunks naturally align via autoregressive propagation from this corrected prefix, bypassing iterative VAE passes.</li>
-  <li><strong>Improvements (on a single RTX 4090 GPU, compared to leading non-autoregressive solver):</strong>
-    <ul>
-      <li>Initial Latency: > 114s ➡️ <strong>4s</strong></li>
-      <li>Throughput: < 0.71 FPS ➡️ <strong>5.91 FPS</strong></li>
-    </ul>
-  </li>
-</ul>
+## ✨ Key Features
 
+### 🪄 AVIS: Autoregressive Video Inverse problem Solver
 
-## Requirements
-We tested this repo on the following setup:
-* Nvidia GPU with at least 24 GB memory (RTX 4090 and H100 are tested).
-* Linux operating system.
-* 32 GB RAM.
+- **Autoregressive Restoration:** Naturally eliminates latency bottlenecks by leveraging autoregressive video diffusion models, enabling continuous processing.
+- **Better Initialization:** Reduces sampling steps by initializing the reverse diffusion process with a measurement-consistent estimate, providing a much better starting point.
 
-Other hardware setup could also work but hasn't been tested.
+### ⚡ AVIS *Flash*: Highly Accelerated Variant
 
-## Installation
-Create a conda environment and install dependencies:
+To pave the way toward real-time deployment, we additionally introduce **AVIS *Flash***, a high-throughput variant that maximizes efficiency.
+
+**Performance Comparison (Single RTX 4090 GPU)**
+
+| Metric | Leading Non-Autoregressive Solvers | AVIS *Flash* (Ours) | Improvement |
+| :--- | :---: | :---: | :---: |
+| **Initial Latency** | > 114.0 s | **4.0 s** | **~28x Faster** |
+| **Throughput** | < 0.71 FPS | **5.91 FPS** | **~8x Faster** |
+
+---
+
+## 🛠️ Getting Started
+
+### Requirements
+- **GPU:** NVIDIA GPU with at least 24GB VRAM (Tested on RTX 4090 and H100)
+- **OS:** Linux
+- **RAM:** 32GB
+> *Note: Other hardware setups may work but have not been formally tested.*
+
+### Installation
+Create a conda environment and install the required dependencies:
 ```
 conda create -n avis python=3.10 -y
 conda activate avis
@@ -42,28 +45,43 @@ pip install -r requirements.txt
 pip install flash-attn --no-build-isolation
 python setup.py develop
 ```
-Note: you may download assets in https://github.com/Dao-AILab/flash-attention/releases
+> *Note: If you encounter issues with flash-attn, you can download the pre-built wheels directly from the [Dao-AILab/flash-attention releases](https://github.com/Dao-AILab/flash-attention/releases).*
 
-## Quick Start
-### Download checkpoints
-```
-huggingface-cli download Wan-AI/Wan2.1-T2V-1.3B --local-dir-use-symlinks False --local-dir wan_models/Wan2.1-T2V-1.3B
-huggingface-cli download gdhe17/Self-Forcing checkpoints/self_forcing_dmd.pt --local-dir .
+## 🚀 Quick Start
+
+### 1. Download Checkpoints
+We use weights from Wan2.1 and Self-Forcing. Download them to your local directory:
+
+```bash
+# Download Wan2.1 Checkpoints
+huggingface-cli download Wan-AI/Wan2.1-T2V-1.3B \
+  --local-dir-use-symlinks False \
+  --local-dir wan_models/Wan2.1-T2V-1.3B
+
+# Download Self-Forcing DMD Checkpoints
+huggingface-cli download gdhe17/Self-Forcing checkpoints/self_forcing_dmd.pt \
+  --local-dir .
 ```
 
-### Inference
-```
-bash sample.sh
-```
-Note:
-* **Our model works better with long, detailed prompts** since it's trained with such prompts. We will integrate prompt extension into the codebase (similar to [Wan2.1](https://github.com/Wan-Video/Wan2.1/tree/main?tab=readme-ov-file#2-using-prompt-extention)) in the future. For now, it is recommended to use third-party LLMs (such as GPT-4o) to extend your prompt before providing to the model.
-* You may want to adjust FPS so it plays smoothly on your device.
-* The speed can be improved by enabling `torch.compile`, [TAEHV-VAE](https://github.com/madebyollin/taehv/), or using FP8 Linear layers, although the latter two options may sacrifice quality. It is recommended to use `torch.compile` if possible and enable TAEHV-VAE if further speedup is needed.
+### 2. Sample Restoration
+Run the causal restoration script to start video restoration:
 
-### Evaluation
+```bash
+bash causal_restoration.sh
 ```
+> *Note: Please place `.mp4` videos in the `./data` directory. The pipeline will automatically degrade these videos to simulate the inverse problem before restoring it. The filename will automatically be used as the text prompt. Since the video prior is trained on detailed descriptions (as described in [Self-Forcing](https://github.com/guandeh17/Self-Forcing)), using a long, descriptive filename will yield better results.*
+
+### 3. Evaluation
+Evaluate the restored outputs using the provided script:
+
+```bash
 bash eval.sh
 ```
+> *Note: This script calculates fidelity and perceptual metrics (e.g., PSNR, SSIM, LPIPS, FID, FVD) are calculated here. For VBench evaluation, please refer to their [official implementation](https://github.com/Vchitect/VBench).*
 
-## Codebase
-This codebase is built on top of the open-source implementation of [Self-Forcing](https://github.com/guandeh17/Self-Forcing) and the [Wan2.1](https://github.com/Wan-Video/Wan2.1).
+
+## 💻 Codebase Attribution
+
+This codebase is built upon the open-source implementations of:
+- [Self-Forcing](https://github.com/guandeh17/Self-Forcing)
+- [Wan2.1](https://github.com/Wan-Video/Wan2.1)
