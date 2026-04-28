@@ -69,7 +69,9 @@ Run the causal restoration script to start video restoration:
 ```bash
 bash causal_restoration.sh
 ```
-> *Note: Please place `.mp4` videos in the `./data` directory. The pipeline will automatically degrade these videos to simulate the inverse problem before restoring it. The filename will automatically be used as the text prompt. Since the video prior is trained on detailed descriptions (as described in [Self-Forcing](https://github.com/guandeh17/Self-Forcing)), using a long, descriptive filename will yield better results.*
+> *Note 1: Please place `.mp4` videos in the `./data` directory. The pipeline will automatically degrade these videos to simulate the inverse problem before restoring it. The filename will automatically be used as the text prompt.*
+
+> *Note 2: This repo provides AVIS Flash. To implement AVIS, simply modify the code to apply the measurement update to all tokens.*
 
 ### 3. Evaluation
 Evaluate the restored outputs using the provided script:
