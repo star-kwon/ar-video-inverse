@@ -43,7 +43,8 @@ To pave the way toward real-time deployment, we additionally introduce **AVIS *F
 
 ### Installation
 Create a conda environment and install the required dependencies:
-```
+
+```bash
 conda create -n avis python=3.10 -y
 conda activate avis
 pip install -r requirements.txt
@@ -76,7 +77,7 @@ bash causal_restoration.sh
 ```
 > *Note 1: Please place `.mp4` videos in the `./data` directory. The pipeline will automatically degrade these videos for restoration.*
 
-> *Note 2: This repo provides AVIS Flash. To implement AVIS, simply modify the code to apply the measurement update to all tokens.*
+> *Note 2: This repo provides AVIS Flash. To implement AVIS, simply modify the code to apply the measurement update to all chunks.*
 
 ### 3. Evaluation
 Evaluate the restored outputs using the provided script:
@@ -84,7 +85,7 @@ Evaluate the restored outputs using the provided script:
 ```bash
 bash eval.sh
 ```
-> *Note: This script calculates fidelity and perceptual metrics (e.g., PSNR, SSIM, LPIPS, FID, FVD) are calculated here. For VBench evaluation, please refer to their [official implementation](https://github.com/Vchitect/VBench).*
+> *Note: This script computes fidelity and perceptual metrics (e.g., PSNR, SSIM, LPIPS, FID, FVD). For VBench evaluation, please refer to their [official implementation](https://github.com/Vchitect/VBench).*
 
 
 ## 💻 Codebase Attribution
@@ -92,3 +93,16 @@ bash eval.sh
 This codebase is built upon the open-source implementations of:
 - [Self-Forcing](https://github.com/guandeh17/Self-Forcing)
 - [Wan2.1](https://github.com/Wan-Video/Wan2.1)
+
+
+## 📝 Citation
+If you find our work useful, please consider citing our paper and giving this repo a star ⭐
+
+```bibtex
+@article{kwon2026accelerating,
+  title={Accelerating Video Inverse Problem Solvers with Autoregressive Diffusion Models},
+  author={Kwon, Taesung and Park, Jonghyun and Chung, Hyungjin and Ye, Jong Chul},
+  journal={arXiv preprint arXiv:2605.20624},
+  year={2026}
+}
+```
