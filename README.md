@@ -1,7 +1,12 @@
 <div align="center">
 
-# Accelerating Video Inverse Problem Solvers with Autoregressive Diffusion Models
-
+# [NeurIPS 2026] Accelerating Video Inverse Problem Solvers with Autoregressive Diffusion Models
+  
+<p>
+  <a href="https://arxiv.org/abs/2605.20624"><img src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg" alt="Paper"></a>
+  <a href="https://avis-project.github.io/"><img src="https://img.shields.io/badge/Project-Page-4b9be8.svg" alt="Project Page"></a>
+</p>
+  
 **AVIS (Autoregressive Video Inverse problem Solver)** is an autoregressive video diffusion framework designed for **accelerating video restoration** toward real-time deployment.
 
 </div>
